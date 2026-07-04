@@ -67,6 +67,11 @@ const SPREAD_MAX = 0.42; // fingers fanned out
 // If the roles feel swapped on your camera, change this to "Right".
 const EXPOSURE_HAND = "Left";
 
+// Proximity: palm length (wrist to middle knuckle, in frame units) as a
+// depth proxy — bigger hand = closer to the camera. Maps onto near 0..1.
+const NEAR_FAR = 0.18;   // palm length at a comfortable arm's length
+const NEAR_CLOSE = 0.40; // palm length right up at the camera
+
 // Gallery nav: with only ONE hand in frame, a fast horizontal rip flips to
 // the next/previous image in assets/. Detected as distance covered within a
 // short window — instantaneous velocity is unreliable when MediaPipe blurs.
@@ -151,6 +156,7 @@ async function run() {
   const breakHand = makeTrack(); // shatters/heals tiles
   const expoHand = makeTrack();  // dodge & burn
   let spread = 0;
+  let near = 0;
   let navAt = 0;
   let navHist = [];
 
@@ -196,6 +202,14 @@ async function run() {
     // eased presence: couplings fade in/out over a few frames
     breakHand.p += ((bi >= 0 ? 1 : 0) - breakHand.p) * 0.25;
     expoHand.p += ((ei >= 0 ? 1 : 0) - expoHand.p) * 0.25;
+
+    // proximity from whichever hand looms largest; no hands eases back to far
+    let nearTarget = 0;
+    for (const lm of hands) {
+      const pl = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+      nearTarget = Math.max(nearTarget, (pl - NEAR_FAR) / (NEAR_CLOSE - NEAR_FAR));
+    }
+    near += (Math.min(1, Math.max(0, nearTarget)) - near) * 0.2;
 
     ctx.save();
     ctx.scale(-1, 1); // mirror the preview so hand-right = screen-right
@@ -288,7 +302,8 @@ async function run() {
     }
 
     if (bi < 0 && ei < 0) parts.push("no hands");
-    send({ type: "hand", ...breakMsg, hand2 });
+    else parts.push(`near ${Math.round(near * 100)}%`);
+    send({ type: "hand", ...breakMsg, hand2, near });
     statusEl.innerHTML = `<b>kiriko</b> — ` + parts.join(" · ");
   };
   loop();

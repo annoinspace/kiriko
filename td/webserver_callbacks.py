@@ -81,6 +81,7 @@ def onWebSocketReceiveText(webServerDAT, client, data):
         _set(h, 18, h2.get('y', 0.5))
         _set(h, 19, h2.get('vy', 0))
         _set(h, 20, float(h2.get('present') or 0))  # eased 0..1, not a bool
+        _set(h, 21, msg.get('near', 0))  # hand proximity to the camera, 0..1
     elif kind == 'nav':
         _nav(1 if msg.get('dir', 1) >= 0 else -1)
     elif kind == 'reset':

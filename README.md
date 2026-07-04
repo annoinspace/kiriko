@@ -99,6 +99,8 @@ status line shows `linked to td` once the WebSocket is up (it retries every
 | exposure range in stops | the `exp2(st.b * 1.5)` line in `td/shaders/refract.frag` |
 | which hand exposes vs breaks | `EXPOSURE_HAND` in `tracker/index.html` |
 | image-flip rip distance/window | `NAV_TRAVEL` / `NAV_WINDOW` in `tracker/index.html` |
+| proximity calibration (hand size near/far) | `NEAR_FAR` / `NEAR_CLOSE` in `tracker/index.html` |
+| proximity effect (lattice warp, refraction boost) | the `near` lines in `td/shaders/refract.frag` |
 
 The shader DATs sync to the files on disk, so edits to `td/shaders/*.frag`
 show up live in TD — no rebuild needed.

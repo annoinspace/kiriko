@@ -13,7 +13,7 @@
 // input 1 — tile state (r shatter, g break angle, b exposure, a block size)
 
 uniform vec4 uGrid;  // cols, rows
-uniform vec4 uHand;  // palm x, y, present — for the cursor rings
+uniform vec4 uHand;  // palm x, y, present, near (0 far .. 1 at the camera)
 uniform vec4 uTipsA; // thumb.xy, index.xy
 uniform vec4 uTipsB; // middle.xy, ring.xy
 uniform vec4 uTipsC; // pinky.xy, spread, unused
@@ -25,6 +25,14 @@ float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
+// smooth value noise, for warping the tile lattice organic
+float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i),                 hash(i + vec2(1.0, 0.0)), f.x),
+               mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
 float ringAt(vec2 uv, vec2 p, float r, float aspect) {
     vec2 q = (uv - p) * vec2(aspect, 1.0);
     return smoothstep(0.005, 0.0, abs(length(q) - r));
@@ -34,17 +42,23 @@ void main() {
     vec2 uv = vUV.st;
     vec2 grid = uGrid.xy;
 
+    // Proximity: hands close to the camera warp the lattice organic and
+    // crank the refraction; far away it's the regular grid, untouched.
+    float near = uHand.w;
+    vec2 wp = uv * grid * 0.75;
+    vec2 wuv = uv + (vec2(vnoise(wp), vnoise(wp + 31.7)) - 0.5) * near * 0.9 / grid;
+
     // Pick the block level. Sample the state at the centers of the 4x4 and
     // 2x2 blocks this pixel falls in; a broken tile with enough stored size
     // promotes the whole aligned block to one big cube.
     float level = 1.0;
-    vec4 st4 = texture(sTD2DInputs[1], (floor(uv * grid / 4.0) + 0.5) * 4.0 / grid);
-    vec4 st2 = texture(sTD2DInputs[1], (floor(uv * grid / 2.0) + 0.5) * 2.0 / grid);
+    vec4 st4 = texture(sTD2DInputs[1], (floor(wuv * grid / 4.0) + 0.5) * 4.0 / grid);
+    vec4 st2 = texture(sTD2DInputs[1], (floor(wuv * grid / 2.0) + 0.5) * 2.0 / grid);
     if      (st4.r > 0.001 && st4.a > 0.6) level = 4.0;
     else if (st2.r > 0.001 && st2.a > 0.3) level = 2.0;
 
-    vec2 cell = floor(uv * grid / level);
-    vec2 local = fract(uv * grid / level);
+    vec2 cell = floor(wuv * grid / level);
+    vec2 local = fract(wuv * grid / level);
     vec4 st = texture(sTD2DInputs[1], (cell + 0.5) * level / grid);
     float shatter = st.r;
     vec2 dn = vec2(cos(st.g), sin(st.g));
@@ -73,13 +87,13 @@ void main() {
         vec2 dnl = normalize(mix(dn, toLamp, 0.35 * lampNear));
         float ang = atan(dnl.y, dnl.x) + (h - 0.5) * 1.1 * s;
         vec2 bend = vec2(cos(ang), sin(ang)) * s * 0.065 * (0.55 + 0.9 * h)
-                  * (0.8 + 0.2 * level) * stretch;
+                  * (0.8 + 0.2 * level) * stretch * (1.0 + near * 0.8);
         // fake facet curvature — light bends more toward the tile edges
         vec2 curve = (local - 0.5) * s * 0.045 * level * stretch;
         vec2 p = uv + bend + curve;
 
         // chromatic split along the (lamp-tilted) swipe direction
-        float ca = s * 0.016 * (0.5 + h) * stretch;
+        float ca = s * 0.016 * (0.5 + h) * stretch * (1.0 + near * 0.8);
         col.r = texture(sTD2DInputs[0], p + dnl * ca).r;
         col.g = texture(sTD2DInputs[0], p).g;
         col.b = texture(sTD2DInputs[0], p - dnl * ca).b;

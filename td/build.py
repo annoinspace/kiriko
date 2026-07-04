@@ -52,7 +52,7 @@ for i, (name, val) in enumerate(
     [('x', 0.5), ('y', 0.5), ('vx', 0), ('vy', 0), ('speed', 0),
      ('present', 0), ('spread', 0)]
     + [('t%d%s' % (t, ax), 0.5) for t in range(5) for ax in 'xy']
-    + [('h2x', 0.5), ('h2y', 0.5), ('h2vy', 0), ('h2p', 0)]
+    + [('h2x', 0.5), ('h2y', 0.5), ('h2vy', 0), ('h2p', 0), ('near', 0)]
 ):
     # Constant CHOP pars were renamed name0/value0 -> const0name/const0value
     # in newer TD builds; handle both.
@@ -158,6 +158,7 @@ refract.par.uniname1 = 'uHand'
 refract.par.value1x.expr = "op('hand')['x']"
 refract.par.value1y.expr = "op('hand')['y']"
 refract.par.value1z.expr = "op('hand')['present']"
+refract.par.value1w.expr = "op('hand')['near']"
 tip_uniforms(refract, 2)
 hand2_uniform(refract)
 
