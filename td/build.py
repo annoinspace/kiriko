@@ -138,6 +138,21 @@ out.nodeX, out.nodeY = 300, 150
 out.inputConnectors[0].connect(refract)
 out.viewer = True
 
+# Presentation window: pulse 'Open as Separate Window' on this node (or run
+# op('/kiriko/window1').par.winopen.pulse() in the textport) to get a clean
+# resizable window showing just the output.
+try:
+    win = c.create(windowCOMP, 'window1')
+    win.nodeX, win.nodeY = 500, 150
+    win.par.winop = 'OUT'
+    for pname, val in (('size', 'custom'), ('winw', 720),
+                       ('winh', round(720 * h / w))):
+        p = getattr(win.par, pname, None)
+        if p is not None:
+            p.val = val
+except Exception as e:
+    print('kiriko: window comp skipped (%s) - view OUT directly instead' % e)
+
 project.save(os.path.join(REPO, 'td', 'kiriko.toe'))
 print('kiriko: built %dx%d tile grid, listening on ws://127.0.0.1:9980' % (COLS, ROWS))
 print('kiriko: saved td/kiriko.toe - open that directly next time')
