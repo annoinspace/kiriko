@@ -50,18 +50,19 @@ void main() {
         col = texture(sTD2DInputs[0], uv).rgb;
     } else {
         float h = hash(cell + level * 7.31);
+        float s = sqrt(shatter);   // perceptual ramp: partial breaks read clearly
 
         // swipe angle sets the bend; every tile is cut a little differently,
         // and bigger blocks bend a little harder
-        float ang = atan(dn.y, dn.x) + (h - 0.5) * 1.1 * shatter;
-        vec2 bend = vec2(cos(ang), sin(ang)) * shatter * 0.04 * (0.55 + 0.9 * h)
+        float ang = atan(dn.y, dn.x) + (h - 0.5) * 1.1 * s;
+        vec2 bend = vec2(cos(ang), sin(ang)) * s * 0.065 * (0.55 + 0.9 * h)
                   * (0.8 + 0.2 * level);
         // fake facet curvature — light bends more toward the tile edges
-        vec2 curve = (local - 0.5) * shatter * 0.035 * level;
+        vec2 curve = (local - 0.5) * s * 0.045 * level;
         vec2 p = uv + bend + curve;
 
         // chromatic split along the swipe direction
-        float ca = shatter * 0.010 * (0.5 + h);
+        float ca = s * 0.016 * (0.5 + h);
         col.r = texture(sTD2DInputs[0], p + dn * ca).r;
         col.g = texture(sTD2DInputs[0], p).g;
         col.b = texture(sTD2DInputs[0], p - dn * ca).b;
@@ -72,11 +73,11 @@ void main() {
         float edge = smoothstep(0.14, 0.0, min(bx, by));
         vec2 en = bx < by ? vec2(local.x < 0.5 ? -1.0 : 1.0, 0.0)
                           : vec2(0.0, local.y < 0.5 ? -1.0 : 1.0);
-        col *= 1.0 + edge * shatter * (0.30 * dot(en, dn) + 0.10);
+        col *= 1.0 + edge * s * (0.35 * dot(en, dn) + 0.12);
 
         // seams open up between the cubes
         float seam = smoothstep(0.045, 0.0, min(bx, by));
-        col *= 1.0 - seam * shatter * 0.55;
+        col *= 1.0 - seam * s * 0.6;
     }
 
     // faint rings where TD thinks your hand is: palm plus five fingertips

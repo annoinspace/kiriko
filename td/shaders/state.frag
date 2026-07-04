@@ -43,18 +43,20 @@ void main() {
     float speed = uInfo.x;
     if (speed > 0.3 && reach > 0.0) {
         vec2 dir = normalize(uHand.zw);
-        float k = reach * min(speed, 3.0) * 0.055;
+        float k = reach * min(speed, 3.0) * 0.09;
         if (shatter > 0.03) {
             float align = dot(dir, normalize(stored));
             if (align < -0.25) {
-                shatter -= k * 1.5;                    // opposite swipe heals
+                shatter -= k * 2.0;                    // opposite swipe heals
+                if (shatter < 0.2) shatter = 0.0;      // finish the heal cleanly
             } else if (align > 0.25) {
                 shatter += k;                          // same direction deepens
                 stored = normalize(mix(stored, dir, 0.2));
                 size = max(size, spread * reach);
             }
         } else {
-            shatter += k;                              // fresh break
+            // one decisive pass breaks the tile outright and it stays broken
+            shatter = max(shatter, 0.45 * reach + k);
             stored = dir;
             size = max(size, spread * reach);
         }
