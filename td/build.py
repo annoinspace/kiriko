@@ -48,9 +48,11 @@ else:
 # --- hand data in -----------------------------------------------------------
 hand = c.create(constantCHOP, 'hand')
 hand.nodeX, hand.nodeY = -600, -100
-for i, (name, val) in enumerate([
-    ('x', 0.5), ('y', 0.5), ('vx', 0), ('vy', 0), ('speed', 0), ('present', 0),
-]):
+for i, (name, val) in enumerate(
+    [('x', 0.5), ('y', 0.5), ('vx', 0), ('vy', 0), ('speed', 0),
+     ('present', 0), ('spread', 0)]
+    + [('t%d%s' % (t, ax), 0.5) for t in range(5) for ax in 'xy']
+):
     # Constant CHOP pars were renamed name0/value0 -> const0name/const0value
     # in newer TD builds; handle both.
     for npar, vpar in (('name%d' % i, 'value%d' % i),
@@ -89,9 +91,10 @@ def grid_res(top):
     top.par.resolutionh = ROWS
     top.par.format = 'rgba32float'
 
-seed = c.create(constantTOP, 'seed')  # black = everything intact
+seed = c.create(constantTOP, 'seed')  # all zeros = everything intact
 seed.nodeX, seed.nodeY = -600, 0
 seed.par.colorr = seed.par.colorg = seed.par.colorb = 0
+seed.par.alpha = 0  # alpha carries block size in the state texture
 grid_res(seed)
 
 fb = c.create(feedbackTOP, 'feedback1')
@@ -115,6 +118,21 @@ state.par.value1y.expr = "op('hand')['present']"
 state.par.value1z.expr = 'absTime.seconds'  # keeps the loop cooking every frame
 state.par.value1w = COLS / ROWS
 
+
+def tip_uniforms(g, base):
+    # uTipsA/B/C: five fingertip positions packed into three vec4s,
+    # with the spread value riding in uTipsC.z
+    for j, uni in enumerate(('uTipsA', 'uTipsB', 'uTipsC')):
+        setattr(g.par, 'uniname%d' % (base + j), uni)
+    chans = ['t0x', 't0y', 't1x', 't1y', 't2x', 't2y',
+             't3x', 't3y', 't4x', 't4y', 'spread']
+    slots = ['value%d%s' % (base + j, ax) for j in range(3) for ax in 'xyzw']
+    for slot, chan in zip(slots, chans):
+        getattr(g.par, slot).expr = "op('hand')['%s']" % chan
+
+
+tip_uniforms(state, 2)
+
 state_out = c.create(nullTOP, 'state_out')
 state_out.nodeX, state_out.nodeY = -100, 0
 state_out.inputConnectors[0].connect(state)
@@ -132,6 +150,7 @@ refract.par.uniname1 = 'uHand'
 refract.par.value1x.expr = "op('hand')['x']"
 refract.par.value1y.expr = "op('hand')['y']"
 refract.par.value1z.expr = "op('hand')['present']"
+tip_uniforms(refract, 2)
 
 out = c.create(nullTOP, 'OUT')
 out.nodeX, out.nodeY = 300, 150

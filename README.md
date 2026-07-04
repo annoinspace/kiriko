@@ -66,6 +66,9 @@ status line shows `linked to td` once the WebSocket is up (it retries every
   along your swipe angle.
 - **Swipe the opposite direction** over broken tiles — they reassemble.
 - Same direction again deepens the break; perpendicular does nothing.
+- **Spread your fingers** as you swipe — the glass breaks into bigger
+  cubes (tiles merge into 2×2, then 4×4 blocks). Fingers together breaks
+  fine tiles; each fingertip also carves its own small trail.
 - **reset tiles** button on the tracker page clears everything (or pulse
   `Reset` on `feedback1` in TD).
 
@@ -76,7 +79,8 @@ status line shows `linked to td` once the WebSocket is up (it retries every
 | tile count | `SHORT` in `td/build.py` (rerun to rebuild) |
 | hand reach, break/heal speed, angle tolerance | `td/shaders/state.frag` |
 | refraction strength, chromatic split, bevel/seam look | `td/shaders/refract.frag` |
-| position/velocity smoothing | constants at the top of `tracker/index.html` |
+| position/velocity smoothing, spread calibration | constants at the top of `tracker/index.html` (`SPREAD_MIN`/`SPREAD_MAX`) |
+| block-merge thresholds (when tiles fuse into 2×2/4×4) | level selection at the top of `main()` in `td/shaders/refract.frag` |
 
 The shader DATs sync to the files on disk, so edits to `td/shaders/*.frag`
 show up live in TD — no rebuild needed.

@@ -57,6 +57,12 @@ const RETRY_MS = 3000;
 const POS_SMOOTH = 0.45; // EMA on palm position
 const VEL_SMOOTH = 0.35; // EMA on velocity — keeps swipe angle steady
 
+const TIP_IDS = [4, 8, 12, 16, 20]; // thumb, index, middle, ring, pinky tips
+// Spread = mean gap between neighbouring fingertips (thumb excluded),
+// normalized by palm length. These map that raw value onto 0..1:
+const SPREAD_MIN = 0.12; // fingers together
+const SPREAD_MAX = 0.42; // fingers fanned out
+
 const statusEl = document.getElementById("status");
 const video = document.getElementById("cam");
 const canvas = document.getElementById("view");
@@ -111,6 +117,7 @@ async function run() {
   let lastT = performance.now();
   let sx = 0.5, sy = 0.5;   // smoothed palm, mirrored, v-up (TD uv space)
   let vx = 0, vy = 0;
+  let spread = 0;
   let hadHand = false;
 
   const loop = () => {
@@ -141,7 +148,7 @@ async function run() {
     // matches TD's uv space (v up).
     const x = 1 - lm[9].x;
     const y = 1 - lm[9].y;
-    if (!hadHand) { sx = x; sy = y; vx = 0; vy = 0; hadHand = true; }
+    if (!hadHand) { sx = x; sy = y; vx = 0; vy = 0; spread = 0; hadHand = true; }
     const px = sx, py = sy;
     sx += (x - sx) * POS_SMOOTH;
     sy += (y - sy) * POS_SMOOTH;
@@ -149,9 +156,20 @@ async function run() {
     vy += ((sy - py) / dt - vy) * VEL_SMOOTH;
     const speed = Math.hypot(vx, vy);
 
-    send({ type: "hand", present: true, x: sx, y: sy, vx, vy, speed });
+    // fingertips, same mirrored/flipped mapping as the palm
+    const tips = TIP_IDS.map(i => [1 - lm[i].x, 1 - lm[i].y]);
+    const palmLen = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+    let gaps = 0;
+    for (let i = 1; i < 4; i++) {
+      gaps += Math.hypot(tips[i][0] - tips[i + 1][0], tips[i][1] - tips[i + 1][1]);
+    }
+    const raw = gaps / 3 / Math.max(palmLen, 1e-4);
+    const target = Math.min(1, Math.max(0, (raw - SPREAD_MIN) / (SPREAD_MAX - SPREAD_MIN)));
+    spread += (target - spread) * 0.3;
 
-    // preview dot + velocity streak
+    send({ type: "hand", present: true, x: sx, y: sy, vx, vy, speed, spread, tips });
+
+    // preview: palm dot + velocity streak + fingertip dots
     const cx = sx * canvas.width, cy = (1 - sy) * canvas.height;
     ctx.strokeStyle = "#d8d4c8";
     ctx.beginPath();
@@ -162,11 +180,16 @@ async function run() {
     ctx.beginPath();
     ctx.arc(cx, cy, 4, 0, Math.PI * 2);
     ctx.fill();
+    for (const [tx, ty] of tips) {
+      ctx.beginPath();
+      ctx.arc(tx * canvas.width, (1 - ty) * canvas.height, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const deg = Math.round(Math.atan2(vy, vx) * 180 / Math.PI);
     statusEl.innerHTML =
       `<b>kiriko</b> — ${linked ? "linked to td" : "waiting for td"}` +
-      ` · ${speed.toFixed(2)} @ ${deg}°`;
+      ` · ${speed.toFixed(2)} @ ${deg}° · spread ${Math.round(spread * 100)}%`;
   };
   loop();
 }

@@ -29,6 +29,11 @@ def onWebSocketReceiveText(webServerDAT, client, data):
         _set(h, 3, msg.get('vy', 0))
         _set(h, 4, msg.get('speed', 0))
         _set(h, 5, 1 if msg.get('present') else 0)
+        _set(h, 6, msg.get('spread', 0))
+        # five fingertips (thumb..pinky) into t0x, t0y .. t4x, t4y
+        for i, tip in enumerate((msg.get('tips') or [])[:5]):
+            _set(h, 7 + 2 * i, tip[0])
+            _set(h, 8 + 2 * i, tip[1])
     elif kind == 'reset':
         op('feedback1').par.resetpulse.pulse()
     return
