@@ -68,8 +68,10 @@ const SPREAD_MAX = 0.42; // fingers fanned out
 const EXPOSURE_HAND = "Left";
 
 // Gallery nav: with only ONE hand in frame, a fast horizontal rip flips to
-// the next/previous image in assets/. Must be faster than a break swipe.
-const NAV_V = 1.6;           // horizontal speed (frame-widths/sec)
+// the next/previous image in assets/. Detected as distance covered within a
+// short window — instantaneous velocity is unreliable when MediaPipe blurs.
+const NAV_TRAVEL = 0.35;     // fraction of frame width covered in the window
+const NAV_WINDOW = 350;      // ms of movement history considered
 const NAV_COOLDOWN = 900;    // ms; one flip per rip, ignores the return path
 
 const statusEl = document.getElementById("status");
@@ -145,6 +147,7 @@ async function run() {
   const expoHand = makeTrack();  // dodge & burn
   let spread = 0;
   let navAt = 0;
+  let navHist = [];
 
   const loop = () => {
     requestAnimationFrame(loop);
@@ -244,13 +247,19 @@ async function run() {
     }
 
     // --- gallery nav: one hand only, fast horizontal rip -------------------
-    if (hands.length === 1 && now > navAt) {
+    if (hands.length === 1) {
       const t = bi >= 0 ? breakHand : expoHand;
-      if (t.seen && Math.abs(t.vx) > NAV_V) {
+      navHist.push({ t: now, x: t.sx });
+      while (navHist.length && now - navHist[0].t > NAV_WINDOW) navHist.shift();
+      const travel = t.sx - navHist[0].x;
+      if (now > navAt && Math.abs(travel) > NAV_TRAVEL) {
         navAt = now + NAV_COOLDOWN;
-        send({ type: "nav", dir: t.vx < 0 ? 1 : -1 });
-        parts.push(t.vx < 0 ? "next image" : "previous image");
+        navHist.length = 0;
+        send({ type: "nav", dir: travel < 0 ? 1 : -1 });
+        parts.push(travel < 0 ? "next image" : "previous image");
       }
+    } else {
+      navHist.length = 0;
     }
 
     if (bi < 0 && ei < 0) parts.push("no hands");
