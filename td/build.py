@@ -52,6 +52,7 @@ for i, (name, val) in enumerate(
     [('x', 0.5), ('y', 0.5), ('vx', 0), ('vy', 0), ('speed', 0),
      ('present', 0), ('spread', 0)]
     + [('t%d%s' % (t, ax), 0.5) for t in range(5) for ax in 'xy']
+    + [('h2x', 0.5), ('h2y', 0.5), ('h2vy', 0), ('h2p', 0)]
 ):
     # Constant CHOP pars were renamed name0/value0 -> const0name/const0value
     # in newer TD builds; handle both.
@@ -131,7 +132,14 @@ def tip_uniforms(g, base):
         getattr(g.par, slot).expr = "op('hand')['%s']" % chan
 
 
+def hand2_uniform(g):
+    g.par.uniname5 = 'uHand2'
+    for ax, chan in zip('xyzw', ('h2x', 'h2y', 'h2vy', 'h2p')):
+        getattr(g.par, 'value5' + ax).expr = "op('hand')['%s']" % chan
+
+
 tip_uniforms(state, 2)
+hand2_uniform(state)
 
 state_out = c.create(nullTOP, 'state_out')
 state_out.nodeX, state_out.nodeY = -100, 0
@@ -151,6 +159,7 @@ refract.par.value1x.expr = "op('hand')['x']"
 refract.par.value1y.expr = "op('hand')['y']"
 refract.par.value1z.expr = "op('hand')['present']"
 tip_uniforms(refract, 2)
+hand2_uniform(refract)
 
 out = c.create(nullTOP, 'OUT')
 out.nodeX, out.nodeY = 300, 150

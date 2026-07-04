@@ -69,6 +69,11 @@ status line shows `linked to td` once the WebSocket is up (it retries every
 - **Spread your fingers** as you swipe — the glass breaks into bigger
   cubes (tiles merge into 2×2, then 4×4 blocks). Fingers together breaks
   fine tiles; each fingertip also carves its own small trail.
+- **Second hand = dodge & burn**: hover your other hand over tiles and
+  raise it to brighten them, lower it to darken. Exposure is painted
+  per-tile, persists, and survives healing. By default the left hand
+  exposes and the right breaks — flip `EXPOSURE_HAND` in
+  `tracker/index.html` if your camera reports them swapped.
 - **reset tiles** button on the tracker page clears everything (or pulse
   `Reset` on `feedback1` in TD).
 
@@ -81,6 +86,9 @@ status line shows `linked to td` once the WebSocket is up (it retries every
 | refraction strength, chromatic split, bevel/seam look | `td/shaders/refract.frag` |
 | position/velocity smoothing, spread calibration | constants at the top of `tracker/index.html` (`SPREAD_MIN`/`SPREAD_MAX`) |
 | block-merge thresholds (when tiles fuse into 2×2/4×4) | level selection at the top of `main()` in `td/shaders/refract.frag` |
+| dodge/burn speed and reach | exposure-hand block in `td/shaders/state.frag` |
+| exposure range in stops | the `exp2(st.b * 1.5)` line in `td/shaders/refract.frag` |
+| which hand exposes vs breaks | `EXPOSURE_HAND` in `tracker/index.html` |
 
 The shader DATs sync to the files on disk, so edits to `td/shaders/*.frag`
 show up live in TD — no rebuild needed.

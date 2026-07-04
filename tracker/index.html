@@ -54,7 +54,7 @@ const MODEL_URL =
 const TD_URL = "ws://127.0.0.1:9980";
 const RETRY_MS = 3000;
 
-const POS_SMOOTH = 0.45; // EMA on palm position
+const POS_SMOOTH = 0.45; // EMA on hand positions
 const VEL_SMOOTH = 0.35; // EMA on velocity — keeps swipe angle steady
 
 const TIP_IDS = [4, 8, 12, 16, 20]; // thumb, index, middle, ring, pinky tips
@@ -62,6 +62,10 @@ const TIP_IDS = [4, 8, 12, 16, 20]; // thumb, index, middle, ring, pinky tips
 // normalized by palm length. These map that raw value onto 0..1:
 const SPREAD_MIN = 0.12; // fingers together
 const SPREAD_MAX = 0.42; // fingers fanned out
+
+// Which hand (as MediaPipe labels it) does exposure; the other breaks glass.
+// If the roles feel swapped on your camera, change this to "Right".
+const EXPOSURE_HAND = "Left";
 
 const statusEl = document.getElementById("status");
 const video = document.getElementById("cam");
@@ -86,6 +90,23 @@ function send(msg) {
 
 document.getElementById("reset").onclick = () => send({ type: "reset" });
 
+// Smoothed position + velocity for one tracked hand, mirrored, v-up.
+function makeTrack() {
+  return {
+    sx: 0.5, sy: 0.5, vx: 0, vy: 0, seen: false,
+    update(lm, dt) {
+      const x = 1 - lm[9].x, y = 1 - lm[9].y; // palm center, TD uv space
+      if (!this.seen) { this.sx = x; this.sy = y; this.vx = 0; this.vy = 0; this.seen = true; }
+      const px = this.sx, py = this.sy;
+      this.sx += (x - this.sx) * POS_SMOOTH;
+      this.sy += (y - this.sy) * POS_SMOOTH;
+      this.vx += ((this.sx - px) / dt - this.vx) * VEL_SMOOTH;
+      this.vy += ((this.sy - py) / dt - this.vy) * VEL_SMOOTH;
+    },
+    drop() { this.seen = false; },
+  };
+}
+
 let tracking = false;
 document.getElementById("start").onclick = async (e) => {
   if (tracking) return;
@@ -105,7 +126,7 @@ async function run() {
   const landmarker = await HandLandmarker.createFromOptions(vision, {
     baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
     runningMode: "VIDEO",
-    numHands: 1,
+    numHands: 2,
   });
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { width: 640, height: 360, facingMode: "user" },
@@ -115,10 +136,9 @@ async function run() {
 
   let lastVideoTime = -1;
   let lastT = performance.now();
-  let sx = 0.5, sy = 0.5;   // smoothed palm, mirrored, v-up (TD uv space)
-  let vx = 0, vy = 0;
+  const breakHand = makeTrack(); // shatters/heals tiles
+  const expoHand = makeTrack();  // dodge & burn
   let spread = 0;
-  let hadHand = false;
 
   const loop = () => {
     requestAnimationFrame(loop);
@@ -129,67 +149,97 @@ async function run() {
     lastT = now;
 
     const res = landmarker.detectForVideo(video, now);
-    const lm = res.landmarks?.[0];
+    const hands = res.landmarks || [];
+    const labels = (res.handedness || res.handednesses || [])
+      .map(h => h?.[0]?.categoryName);
+
+    // Assign roles: the EXPOSURE_HAND label exposes, everything else breaks.
+    // With one hand visible it falls through to breaking unless it's the
+    // exposure hand.
+    let bi = -1, ei = -1;
+    for (let i = 0; i < hands.length; i++) {
+      if (labels[i] === EXPOSURE_HAND && ei < 0) ei = i;
+      else if (bi < 0) bi = i;
+      else if (ei < 0) ei = i;
+    }
 
     ctx.save();
     ctx.scale(-1, 1); // mirror the preview so hand-right = screen-right
     ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    if (!lm) {
-      if (hadHand) { vx = 0; vy = 0; }
-      hadHand = false;
-      send({ type: "hand", present: false, x: sx, y: sy, vx: 0, vy: 0, speed: 0 });
-      statusEl.innerHTML = `<b>kiriko</b> — ${linked ? "linked to td" : "waiting for td"} · no hand`;
-      return;
-    }
+    const parts = [linked ? "linked to td" : "waiting for td"];
 
-    // Palm center (middle-finger knuckle), mirrored x, flipped y so it
-    // matches TD's uv space (v up).
-    const x = 1 - lm[9].x;
-    const y = 1 - lm[9].y;
-    if (!hadHand) { sx = x; sy = y; vx = 0; vy = 0; spread = 0; hadHand = true; }
-    const px = sx, py = sy;
-    sx += (x - sx) * POS_SMOOTH;
-    sy += (y - sy) * POS_SMOOTH;
-    vx += ((sx - px) / dt - vx) * VEL_SMOOTH;
-    vy += ((sy - py) / dt - vy) * VEL_SMOOTH;
-    const speed = Math.hypot(vx, vy);
+    // --- break hand -------------------------------------------------------
+    let breakMsg = { present: false, x: breakHand.sx, y: breakHand.sy,
+                     vx: 0, vy: 0, speed: 0, spread: 0, tips: [] };
+    if (bi >= 0) {
+      const lm = hands[bi];
+      breakHand.update(lm, dt);
+      const speed = Math.hypot(breakHand.vx, breakHand.vy);
 
-    // fingertips, same mirrored/flipped mapping as the palm
-    const tips = TIP_IDS.map(i => [1 - lm[i].x, 1 - lm[i].y]);
-    const palmLen = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
-    let gaps = 0;
-    for (let i = 1; i < 4; i++) {
-      gaps += Math.hypot(tips[i][0] - tips[i + 1][0], tips[i][1] - tips[i + 1][1]);
-    }
-    const raw = gaps / 3 / Math.max(palmLen, 1e-4);
-    const target = Math.min(1, Math.max(0, (raw - SPREAD_MIN) / (SPREAD_MAX - SPREAD_MIN)));
-    spread += (target - spread) * 0.3;
+      const tips = TIP_IDS.map(i => [1 - lm[i].x, 1 - lm[i].y]);
+      const palmLen = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+      let gaps = 0;
+      for (let i = 1; i < 4; i++) {
+        gaps += Math.hypot(tips[i][0] - tips[i + 1][0], tips[i][1] - tips[i + 1][1]);
+      }
+      const raw = gaps / 3 / Math.max(palmLen, 1e-4);
+      const target = Math.min(1, Math.max(0, (raw - SPREAD_MIN) / (SPREAD_MAX - SPREAD_MIN)));
+      spread += (target - spread) * 0.3;
 
-    send({ type: "hand", present: true, x: sx, y: sy, vx, vy, speed, spread, tips });
+      breakMsg = { present: true, x: breakHand.sx, y: breakHand.sy,
+                   vx: breakHand.vx, vy: breakHand.vy, speed, spread, tips };
 
-    // preview: palm dot + velocity streak + fingertip dots
-    const cx = sx * canvas.width, cy = (1 - sy) * canvas.height;
-    ctx.strokeStyle = "#d8d4c8";
-    ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.lineTo(cx + vx * 40, cy - vy * 40);
-    ctx.stroke();
-    ctx.fillStyle = "#d8d4c8";
-    ctx.beginPath();
-    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
-    ctx.fill();
-    for (const [tx, ty] of tips) {
+      // preview: filled palm dot + velocity streak + fingertip dots
+      const cx = breakHand.sx * canvas.width, cy = (1 - breakHand.sy) * canvas.height;
+      ctx.strokeStyle = ctx.fillStyle = "#d8d4c8";
       ctx.beginPath();
-      ctx.arc(tx * canvas.width, (1 - ty) * canvas.height, 2, 0, Math.PI * 2);
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + breakHand.vx * 40, cy - breakHand.vy * 40);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4, 0, Math.PI * 2);
       ctx.fill();
+      for (const [tx, ty] of tips) {
+        ctx.beginPath();
+        ctx.arc(tx * canvas.width, (1 - ty) * canvas.height, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      const deg = Math.round(Math.atan2(breakMsg.vy, breakMsg.vx) * 180 / Math.PI);
+      parts.push(`break ${speed.toFixed(2)} @ ${deg}° · spread ${Math.round(spread * 100)}%`);
+    } else {
+      breakHand.drop();
+      spread = 0;
     }
 
-    const deg = Math.round(Math.atan2(vy, vx) * 180 / Math.PI);
-    statusEl.innerHTML =
-      `<b>kiriko</b> — ${linked ? "linked to td" : "waiting for td"}` +
-      ` · ${speed.toFixed(2)} @ ${deg}° · spread ${Math.round(spread * 100)}%`;
+    // --- exposure hand ------------------------------------------------------
+    let hand2 = { present: false, x: 0.5, y: 0.5, vy: 0 };
+    if (ei >= 0) {
+      expoHand.update(hands[ei], dt);
+      hand2 = { present: true, x: expoHand.sx, y: expoHand.sy, vy: expoHand.vy };
+
+      // preview: hollow circle + vertical intent line
+      const cx = expoHand.sx * canvas.width, cy = (1 - expoHand.sy) * canvas.height;
+      ctx.strokeStyle = "#d8d4c8";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 7, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, cy - expoHand.vy * 40);
+      ctx.stroke();
+
+      const dir = expoHand.vy > 0.15 ? "+" : expoHand.vy < -0.15 ? "−" : "·";
+      parts.push(`expose ${dir}`);
+    } else {
+      expoHand.drop();
+    }
+
+    if (bi < 0 && ei < 0) parts.push("no hands");
+    send({ type: "hand", ...breakMsg, hand2 });
+    statusEl.innerHTML = `<b>kiriko</b> — ` + parts.join(" · ");
   };
   loop();
 }

@@ -6,14 +6,18 @@
 // Tiles broken with spread fingers (high size channel) merge into bigger
 // 2x2 / 4x4 blocks, aligned to the base grid so the levels nest cleanly.
 //
+// Tile exposure (painted by the second hand) applies to every tile, broken
+// or not, as photographic stops.
+//
 // input 0 — source image
-// input 1 — tile state (r shatter, gb break direction, a block size)
+// input 1 — tile state (r shatter, g break angle, b exposure, a block size)
 
 uniform vec4 uGrid;  // cols, rows
 uniform vec4 uHand;  // palm x, y, present — for the cursor rings
 uniform vec4 uTipsA; // thumb.xy, index.xy
 uniform vec4 uTipsB; // middle.xy, ring.xy
 uniform vec4 uTipsC; // pinky.xy, spread, unused
+uniform vec4 uHand2; // exposure palm x, y, vy, present
 
 out vec4 fragColor;
 
@@ -43,7 +47,7 @@ void main() {
     vec2 local = fract(uv * grid / level);
     vec4 st = texture(sTD2DInputs[1], (cell + 0.5) * level / grid);
     float shatter = st.r;
-    vec2 dn = normalize(st.gb + 1e-6);
+    vec2 dn = vec2(cos(st.g), sin(st.g));
 
     vec3 col;
     if (shatter < 0.001) {
@@ -80,6 +84,9 @@ void main() {
         col *= 1.0 - seam * s * 0.6;
     }
 
+    // per-tile exposure, in stops: -1..1 maps to a bit under half / double-ish
+    col *= exp2(st.b * 1.5);
+
     // faint rings where TD thinks your hand is: palm plus five fingertips
     if (uHand.z > 0.5) {
         float aspect = grid.x / grid.y;
@@ -90,6 +97,12 @@ void main() {
         ring = max(ring, ringAt(uv, uTipsB.zw, 0.012, aspect));
         ring = max(ring, ringAt(uv, uTipsC.xy, 0.012, aspect));
         col = mix(col, vec3(1.0), ring * 0.35);
+    }
+    // dimmer second ring for the exposure hand
+    if (uHand2.w > 0.5) {
+        float aspect = grid.x / grid.y;
+        float ring2 = ringAt(uv, uHand2.xy, 0.028, aspect);
+        col = mix(col, vec3(1.0), ring2 * 0.2);
     }
 
     fragColor = TDOutputSwizzle(vec4(col, 1.0));
