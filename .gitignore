@@ -1,0 +1,6 @@
+# TouchDesigner project files are binary; td/build.py regenerates them
+*.toe
+Backup/
+CrashAutoSave.*
+
+.DS_Store

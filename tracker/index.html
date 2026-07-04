@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kiriko — hand tracker</title>
+<style>
+  :root {
+    --ink: #d8d4c8;
+    --ink-faint: #6b675c;
+    --line: #2c2a24;
+  }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px;
+    background: #14130f; color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase;
+  }
+  canvas { border: 1px solid var(--line); transform: none; }
+  video { display: none; }
+  #status { color: var(--ink-faint); }
+  #status b { color: var(--ink); font-weight: normal; }
+  button {
+    all: unset; cursor: pointer; color: var(--ink-faint);
+    letter-spacing: inherit; text-transform: inherit; font: inherit;
+    transition: color 0.3s;
+  }
+  button:hover { color: var(--ink); }
+</style>
+</head>
+<body>
+<canvas id="view" width="480" height="270"></canvas>
+<div id="status"><b>kiriko</b> — camera off</div>
+<div>
+  <button id="start">✋ start tracking</button>
+  &nbsp;·&nbsp;
+  <button id="reset">reset tiles</button>
+</div>
+<video id="cam" muted playsinline></video>
+
+<script type="module">
+// MediaPipe runs entirely in-browser (WASM); these URLs are fetched once for
+// the runtime and the landmark model. No video leaves the machine — only tiny
+// JSON hand-position messages go to TouchDesigner on localhost.
+import { FilesetResolver, HandLandmarker } from
+  "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/+esm";
+
+const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODEL_URL =
+  "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+
+// TouchDesigner Web Server DAT, created by td/build.py.
+const TD_URL = "ws://127.0.0.1:9980";
+const RETRY_MS = 3000;
+
+const POS_SMOOTH = 0.45; // EMA on palm position
+const VEL_SMOOTH = 0.35; // EMA on velocity — keeps swipe angle steady
+
+const statusEl = document.getElementById("status");
+const video = document.getElementById("cam");
+const canvas = document.getElementById("view");
+const ctx = canvas.getContext("2d");
+
+let ws = null;
+let linked = false;
+
+// Silently retries while TD isn't running, same convention as the orbit.
+function connect() {
+  ws = new WebSocket(TD_URL);
+  ws.onopen = () => { linked = true; };
+  ws.onclose = () => { linked = false; setTimeout(connect, RETRY_MS); };
+  ws.onerror = () => {};
+}
+connect();
+
+function send(msg) {
+  if (linked && ws.readyState === 1) ws.send(JSON.stringify(msg));
+}
+
+document.getElementById("reset").onclick = () => send({ type: "reset" });
+
+let tracking = false;
+document.getElementById("start").onclick = async (e) => {
+  if (tracking) return;
+  tracking = true;
+  e.target.textContent = "starting camera…";
+  try {
+    await run();
+    e.target.style.display = "none";
+  } catch (err) {
+    tracking = false;
+    e.target.textContent = "camera unavailable — retry";
+  }
+};
+
+async function run() {
+  const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+  const landmarker = await HandLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: MODEL_URL, delegate: "GPU" },
+    runningMode: "VIDEO",
+    numHands: 1,
+  });
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { width: 640, height: 360, facingMode: "user" },
+  });
+  video.srcObject = stream;
+  await video.play();
+
+  let lastVideoTime = -1;
+  let lastT = performance.now();
+  let sx = 0.5, sy = 0.5;   // smoothed palm, mirrored, v-up (TD uv space)
+  let vx = 0, vy = 0;
+  let hadHand = false;
+
+  const loop = () => {
+    requestAnimationFrame(loop);
+    if (video.currentTime === lastVideoTime) return;
+    lastVideoTime = video.currentTime;
+    const now = performance.now();
+    const dt = Math.min(0.1, Math.max(1 / 120, (now - lastT) / 1000));
+    lastT = now;
+
+    const res = landmarker.detectForVideo(video, now);
+    const lm = res.landmarks?.[0];
+
+    ctx.save();
+    ctx.scale(-1, 1); // mirror the preview so hand-right = screen-right
+    ctx.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+    ctx.restore();
+
+    if (!lm) {
+      if (hadHand) { vx = 0; vy = 0; }
+      hadHand = false;
+      send({ type: "hand", present: false, x: sx, y: sy, vx: 0, vy: 0, speed: 0 });
+      statusEl.innerHTML = `<b>kiriko</b> — ${linked ? "linked to td" : "waiting for td"} · no hand`;
+      return;
+    }
+
+    // Palm center (middle-finger knuckle), mirrored x, flipped y so it
+    // matches TD's uv space (v up).
+    const x = 1 - lm[9].x;
+    const y = 1 - lm[9].y;
+    if (!hadHand) { sx = x; sy = y; vx = 0; vy = 0; hadHand = true; }
+    const px = sx, py = sy;
+    sx += (x - sx) * POS_SMOOTH;
+    sy += (y - sy) * POS_SMOOTH;
+    vx += ((sx - px) / dt - vx) * VEL_SMOOTH;
+    vy += ((sy - py) / dt - vy) * VEL_SMOOTH;
+    const speed = Math.hypot(vx, vy);
+
+    send({ type: "hand", present: true, x: sx, y: sy, vx, vy, speed });
+
+    // preview dot + velocity streak
+    const cx = sx * canvas.width, cy = (1 - sy) * canvas.height;
+    ctx.strokeStyle = "#d8d4c8";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + vx * 40, cy - vy * 40);
+    ctx.stroke();
+    ctx.fillStyle = "#d8d4c8";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    const deg = Math.round(Math.atan2(vy, vx) * 180 / Math.PI);
+    statusEl.innerHTML =
+      `<b>kiriko</b> — ${linked ? "linked to td" : "waiting for td"}` +
+      ` · ${speed.toFixed(2)} @ ${deg}°`;
+  };
+  loop();
+}
+</script>
+</body>
+</html>
