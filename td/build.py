@@ -17,7 +17,7 @@ except NameError:
     REPO = os.path.expanduser('~/kiriko')
 
 SHADERS = os.path.join(REPO, 'td', 'shaders')
-COLS = 36  # tile columns; rows follow the image aspect
+SHORT = 28  # tiles across the image's shorter side; the long side follows aspect
 
 if op('/kiriko'):
     op('/kiriko').destroy()
@@ -38,7 +38,12 @@ else:
     print('kiriko: no image in assets/, using the TD default — drop one in and rerun')
 src.cook(force=True)
 w, h = max(src.width, 1), max(src.height, 1)
-ROWS = max(4, round(COLS * h / w))
+if w <= h:
+    COLS = SHORT
+    ROWS = max(4, round(SHORT * h / w))
+else:
+    ROWS = SHORT
+    COLS = max(4, round(SHORT * w / h))
 
 # --- hand data in -----------------------------------------------------------
 hand = c.create(constantCHOP, 'hand')

@@ -70,7 +70,7 @@ status line shows `linked to td` once the WebSocket is up (it retries every
 
 | what | where |
 |---|---|
-| tile count | `COLS` in `td/build.py` (rerun to rebuild) |
+| tile count | `SHORT` in `td/build.py` (rerun to rebuild) |
 | hand reach, break/heal speed, angle tolerance | `td/shaders/state.frag` |
 | refraction strength, chromatic split, bevel/seam look | `td/shaders/refract.frag` |
 | position/velocity smoothing | constants at the top of `tracker/index.html` |
