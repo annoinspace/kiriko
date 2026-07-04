@@ -69,7 +69,7 @@ def onWebSocketReceiveText(webServerDAT, client, data):
         _set(h, 2, msg.get('vx', 0))
         _set(h, 3, msg.get('vy', 0))
         _set(h, 4, msg.get('speed', 0))
-        _set(h, 5, 1 if msg.get('present') else 0)
+        _set(h, 5, float(msg.get('present') or 0))  # eased 0..1, not a bool
         _set(h, 6, msg.get('spread', 0))
         # five fingertips (thumb..pinky) into t0x, t0y .. t4x, t4y
         for i, tip in enumerate((msg.get('tips') or [])[:5]):
@@ -80,7 +80,7 @@ def onWebSocketReceiveText(webServerDAT, client, data):
         _set(h, 17, h2.get('x', 0.5))
         _set(h, 18, h2.get('y', 0.5))
         _set(h, 19, h2.get('vy', 0))
-        _set(h, 20, 1 if h2.get('present') else 0)
+        _set(h, 20, float(h2.get('present') or 0))  # eased 0..1, not a bool
     elif kind == 'nav':
         _nav(1 if msg.get('dir', 1) >= 0 else -1)
     elif kind == 'reset':

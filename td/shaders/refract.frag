@@ -56,9 +56,10 @@ void main() {
     vec2 lampVec = (uHand2.xy - uv) * vec2(aspect, 1.0);
     float lampNear = smoothstep(0.75, 0.1, length(lampVec)) * uHand2.w;
     vec2 toLamp = normalize(lampVec + 1e-5);
-    float duet = (uHand.z > 0.5 && uHand2.w > 0.5) ? 1.0 : 0.0;
+    // presence values are eased 0..1, so the duet fades in rather than snaps
+    float duet = uHand.z * uHand2.w;
     float gap = length((uHand.xy - uHand2.xy) * vec2(aspect, 1.0));
-    float stretch = mix(1.0, clamp(gap * 2.2, 0.55, 2.0), duet);
+    float stretch = mix(1.0, clamp(gap * 1.8, 0.7, 1.7), duet);
 
     vec3 col;
     if (shatter < 0.001) {

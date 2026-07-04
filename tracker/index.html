@@ -98,19 +98,24 @@ function send(msg) {
 document.getElementById("reset").onclick = () => send({ type: "reset" });
 
 // Smoothed position + velocity for one tracked hand, mirrored, v-up.
+// `p` is eased presence (0..1) so effects fade in/out instead of popping.
 function makeTrack() {
   return {
-    sx: 0.5, sy: 0.5, vx: 0, vy: 0, seen: false,
+    sx: 0.5, sy: 0.5, vx: 0, vy: 0, p: 0, seen: false,
     update(lm, dt) {
       const x = 1 - lm[9].x, y = 1 - lm[9].y; // palm center, TD uv space
-      if (!this.seen) { this.sx = x; this.sy = y; this.vx = 0; this.vy = 0; this.seen = true; }
+      // fresh acquisition (or a teleport-sized jump) snaps without a
+      // velocity spike, so re-detections can't shatter random tiles
+      if (!this.seen || Math.hypot(x - this.sx, y - this.sy) > 0.3) {
+        this.sx = x; this.sy = y; this.vx = 0; this.vy = 0; this.seen = true;
+      }
       const px = this.sx, py = this.sy;
       this.sx += (x - this.sx) * POS_SMOOTH;
       this.sy += (y - this.sy) * POS_SMOOTH;
       this.vx += ((this.sx - px) / dt - this.vx) * VEL_SMOOTH;
       this.vy += ((this.sy - py) / dt - this.vy) * VEL_SMOOTH;
     },
-    drop() { this.seen = false; },
+    drop() { this.seen = false; this.vx = 0; this.vy = 0; },
   };
 }
 
@@ -162,15 +167,35 @@ async function run() {
     const labels = (res.handedness || res.handednesses || [])
       .map(h => h?.[0]?.categoryName);
 
-    // Assign roles: the EXPOSURE_HAND label exposes, everything else breaks.
-    // With one hand visible it falls through to breaking unless it's the
-    // exposure hand.
-    let bi = -1, ei = -1;
+    // Assign roles stickily: a tracked hand keeps whichever detection is
+    // nearest to where it was last frame, so MediaPipe's flickering
+    // left/right labels can't swap the roles mid-play. Labels only decide
+    // where a NEW hand goes.
+    const pts = hands.map(lm => [1 - lm[9].x, 1 - lm[9].y]);
+    const claimed = new Set();
+    const claim = (track) => {
+      if (!track.seen) return -1;
+      let best = -1, bd = 0.3; // max jump to still count as the same hand
+      for (let i = 0; i < pts.length; i++) {
+        if (claimed.has(i)) continue;
+        const d = Math.hypot(pts[i][0] - track.sx, pts[i][1] - track.sy);
+        if (d < bd) { bd = d; best = i; }
+      }
+      if (best >= 0) claimed.add(best);
+      return best;
+    };
+    let bi = claim(breakHand);
+    let ei = claim(expoHand);
     for (let i = 0; i < hands.length; i++) {
-      if (labels[i] === EXPOSURE_HAND && ei < 0) ei = i;
-      else if (bi < 0) bi = i;
-      else if (ei < 0) ei = i;
+      if (claimed.has(i)) continue;
+      if (labels[i] === EXPOSURE_HAND && ei < 0) { ei = i; claimed.add(i); }
+      else if (bi < 0) { bi = i; claimed.add(i); }
+      else if (ei < 0) { ei = i; claimed.add(i); }
     }
+
+    // eased presence: couplings fade in/out over a few frames
+    breakHand.p += ((bi >= 0 ? 1 : 0) - breakHand.p) * 0.25;
+    expoHand.p += ((ei >= 0 ? 1 : 0) - expoHand.p) * 0.25;
 
     ctx.save();
     ctx.scale(-1, 1); // mirror the preview so hand-right = screen-right
@@ -180,7 +205,7 @@ async function run() {
     const parts = [linked ? "linked to td" : "waiting for td"];
 
     // --- break hand -------------------------------------------------------
-    let breakMsg = { present: false, x: breakHand.sx, y: breakHand.sy,
+    let breakMsg = { present: breakHand.p, x: breakHand.sx, y: breakHand.sy,
                      vx: 0, vy: 0, speed: 0, spread: 0, tips: [] };
     if (bi >= 0) {
       const lm = hands[bi];
@@ -197,7 +222,7 @@ async function run() {
       const target = Math.min(1, Math.max(0, (raw - SPREAD_MIN) / (SPREAD_MAX - SPREAD_MIN)));
       spread += (target - spread) * 0.3;
 
-      breakMsg = { present: true, x: breakHand.sx, y: breakHand.sy,
+      breakMsg = { present: breakHand.p, x: breakHand.sx, y: breakHand.sy,
                    vx: breakHand.vx, vy: breakHand.vy, speed, spread, tips };
 
       // preview: filled palm dot + velocity streak + fingertip dots
@@ -224,10 +249,10 @@ async function run() {
     }
 
     // --- exposure hand ------------------------------------------------------
-    let hand2 = { present: false, x: 0.5, y: 0.5, vy: 0 };
+    let hand2 = { present: expoHand.p, x: expoHand.sx, y: expoHand.sy, vy: 0 };
     if (ei >= 0) {
       expoHand.update(hands[ei], dt);
-      hand2 = { present: true, x: expoHand.sx, y: expoHand.sy, vy: expoHand.vy };
+      hand2 = { present: expoHand.p, x: expoHand.sx, y: expoHand.sy, vy: expoHand.vy };
 
       // preview: hollow circle + vertical intent line
       const cx = expoHand.sx * canvas.width, cy = (1 - expoHand.sy) * canvas.height;
