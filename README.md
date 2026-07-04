@@ -74,6 +74,11 @@ status line shows `linked to td` once the WebSocket is up (it retries every
   per-tile, persists, and survives healing. By default the left hand
   exposes and the right breaks — flip `EXPOSURE_HAND` in
   `tracker/index.html` if your camera reports them swapped.
+- **The hands duet.** The light hand is a lamp: broken glass near it tilts
+  and glints toward it, so sweeping it re-lights everything the break hand
+  made. With both hands up, pulling them apart winds the refraction up;
+  bringing them together calms it. Cupping the break hand close to the
+  light hand makes dodge/burn paint faster.
 - **reset tiles** button on the tracker page clears everything (or pulse
   `Reset` on `feedback1` in TD).
 

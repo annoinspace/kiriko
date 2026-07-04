@@ -70,9 +70,13 @@ void main() {
     }
 
     // --- exposure hand ------------------------------------------------------
+    // painting concentrates when the break hand cups in close to the light
+    vec2 gapv = (uHand.xy - uHand2.xy) * vec2(uInfo.w, 1.0);
+    float closeness = smoothstep(0.55, 0.15, length(gapv)) * uInfo.y * uHand2.w;
+    float rate = 0.04 * (1.0 + 1.5 * closeness);
     float reach2 = reachAt(uHand2.xy, 0.11) * uHand2.w;
     if (reach2 > 0.0 && abs(uHand2.z) > 0.15) {
-        exposure = clamp(exposure + uHand2.z * reach2 * 0.04, -1.0, 1.0);
+        exposure = clamp(exposure + uHand2.z * reach2 * rate, -1.0, 1.0);
     }
 
     shatter = clamp(shatter, 0.0, 1.0);

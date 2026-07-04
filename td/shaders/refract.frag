@@ -49,6 +49,17 @@ void main() {
     float shatter = st.r;
     vec2 dn = vec2(cos(st.g), sin(st.g));
 
+    // The two hands play off each other. The exposure hand acts as a lamp:
+    // broken glass tilts and glints toward it. With both hands up, the gap
+    // between them winds the refraction up (apart = wild, together = calm).
+    float aspect = grid.x / grid.y;
+    vec2 lampVec = (uHand2.xy - uv) * vec2(aspect, 1.0);
+    float lampNear = smoothstep(0.75, 0.1, length(lampVec)) * uHand2.w;
+    vec2 toLamp = normalize(lampVec + 1e-5);
+    float duet = (uHand.z > 0.5 && uHand2.w > 0.5) ? 1.0 : 0.0;
+    float gap = length((uHand.xy - uHand2.xy) * vec2(aspect, 1.0));
+    float stretch = mix(1.0, clamp(gap * 2.2, 0.55, 2.0), duet);
+
     vec3 col;
     if (shatter < 0.001) {
         col = texture(sTD2DInputs[0], uv).rgb;
@@ -56,20 +67,21 @@ void main() {
         float h = hash(cell + level * 7.31);
         float s = sqrt(shatter);   // perceptual ramp: partial breaks read clearly
 
-        // swipe angle sets the bend; every tile is cut a little differently,
-        // and bigger blocks bend a little harder
-        float ang = atan(dn.y, dn.x) + (h - 0.5) * 1.1 * s;
+        // swipe angle sets the bend, tilted toward the lamp when it's near;
+        // every tile is cut a little differently, bigger blocks bend harder
+        vec2 dnl = normalize(mix(dn, toLamp, 0.35 * lampNear));
+        float ang = atan(dnl.y, dnl.x) + (h - 0.5) * 1.1 * s;
         vec2 bend = vec2(cos(ang), sin(ang)) * s * 0.065 * (0.55 + 0.9 * h)
-                  * (0.8 + 0.2 * level);
+                  * (0.8 + 0.2 * level) * stretch;
         // fake facet curvature — light bends more toward the tile edges
-        vec2 curve = (local - 0.5) * s * 0.045 * level;
+        vec2 curve = (local - 0.5) * s * 0.045 * level * stretch;
         vec2 p = uv + bend + curve;
 
-        // chromatic split along the swipe direction
-        float ca = s * 0.016 * (0.5 + h);
-        col.r = texture(sTD2DInputs[0], p + dn * ca).r;
+        // chromatic split along the (lamp-tilted) swipe direction
+        float ca = s * 0.016 * (0.5 + h) * stretch;
+        col.r = texture(sTD2DInputs[0], p + dnl * ca).r;
         col.g = texture(sTD2DInputs[0], p).g;
-        col.b = texture(sTD2DInputs[0], p - dn * ca).b;
+        col.b = texture(sTD2DInputs[0], p - dnl * ca).b;
 
         // beveled edges, lit from the direction the swipe came from
         float bx = min(local.x, 1.0 - local.x);
@@ -77,7 +89,8 @@ void main() {
         float edge = smoothstep(0.14, 0.0, min(bx, by));
         vec2 en = bx < by ? vec2(local.x < 0.5 ? -1.0 : 1.0, 0.0)
                           : vec2(0.0, local.y < 0.5 ? -1.0 : 1.0);
-        col *= 1.0 + edge * s * (0.35 * dot(en, dn) + 0.12);
+        col *= 1.0 + edge * s * (0.35 * dot(en, dnl) + 0.12)
+                   + edge * s * lampNear * max(dot(en, toLamp), 0.0) * 0.5;
 
         // seams open up between the cubes
         float seam = smoothstep(0.045, 0.0, min(bx, by));
@@ -89,7 +102,6 @@ void main() {
 
     // faint rings where TD thinks your hand is: palm plus five fingertips
     if (uHand.z > 0.5) {
-        float aspect = grid.x / grid.y;
         float ring = ringAt(uv, uHand.xy, 0.035, aspect);
         ring = max(ring, ringAt(uv, uTipsA.xy, 0.012, aspect));
         ring = max(ring, ringAt(uv, uTipsA.zw, 0.012, aspect));
@@ -100,7 +112,6 @@ void main() {
     }
     // dimmer second ring for the exposure hand
     if (uHand2.w > 0.5) {
-        float aspect = grid.x / grid.y;
         float ring2 = ringAt(uv, uHand2.xy, 0.028, aspect);
         col = mix(col, vec3(1.0), ring2 * 0.2);
     }
