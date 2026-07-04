@@ -79,6 +79,10 @@ status line shows `linked to td` once the WebSocket is up (it retries every
   made. With both hands up, pulling them apart winds the refraction up;
   bringing them together calms it. Cupping the break hand close to the
   light hand makes dodge/burn paint faster.
+- **One hand only + a fast rip across the screen** flips through the
+  images in `assets/` — right-to-left for next, left-to-right for
+  previous. The grid refits to the new image's aspect and the glass
+  resets. (Drop several images into `assets/` to make this do anything.)
 - **reset tiles** button on the tracker page clears everything (or pulse
   `Reset` on `feedback1` in TD).
 
@@ -94,6 +98,7 @@ status line shows `linked to td` once the WebSocket is up (it retries every
 | dodge/burn speed and reach | exposure-hand block in `td/shaders/state.frag` |
 | exposure range in stops | the `exp2(st.b * 1.5)` line in `td/shaders/refract.frag` |
 | which hand exposes vs breaks | `EXPOSURE_HAND` in `tracker/index.html` |
+| image-flip swipe speed | `NAV_V` in `tracker/index.html` |
 
 The shader DATs sync to the files on disk, so edits to `td/shaders/*.frag`
 show up live in TD — no rebuild needed.

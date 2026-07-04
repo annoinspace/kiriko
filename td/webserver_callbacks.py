@@ -1,8 +1,49 @@
 # Callbacks for the Web Server DAT. The tracker page streams hand messages
 # here; we fan them out into the `hand` Constant CHOP, which the GLSL TOPs
-# read through parameter expressions.
+# read through parameter expressions. 'nav' messages (one-hand fast rip)
+# cycle through the images in assets/.
 
+import glob
 import json
+import os
+
+IMG_EXTS = ('jpg', 'jpeg', 'png', 'tif', 'tiff', 'exr')
+
+
+def _set_image(path):
+    # Point the source at a new image and refit the tile grid to its aspect
+    # (mirrors the grid logic in build.py), then start from fresh glass.
+    src = op('source')
+    src.par.file = path
+    src.cook(force=True)
+    w, h = max(src.width, 1), max(src.height, 1)
+    short = 28
+    if w <= h:
+        cols, rows = short, max(4, round(short * h / w))
+    else:
+        cols, rows = max(4, round(short * w / h)), short
+    for name in ('seed', 'state'):
+        o = op(name)
+        o.par.resolutionw = cols
+        o.par.resolutionh = rows
+    op('state').par.value1w = cols / rows
+    op('refract').par.value0x = cols
+    op('refract').par.value0y = rows
+    op('feedback1').par.resetpulse.pulse()
+
+
+def _nav(step):
+    src = op('source')
+    cur = src.par.file.eval()
+    folder = os.path.dirname(cur)
+    imgs = sorted(
+        f for e in IMG_EXTS
+        for f in glob.glob(os.path.join(folder, '*.' + e))
+    )
+    if not imgs:
+        return
+    i = imgs.index(cur) if cur in imgs else -step  # unknown current -> first
+    _set_image(imgs[(i + step) % len(imgs)])
 
 
 def _set(h, i, v):
@@ -40,6 +81,8 @@ def onWebSocketReceiveText(webServerDAT, client, data):
         _set(h, 18, h2.get('y', 0.5))
         _set(h, 19, h2.get('vy', 0))
         _set(h, 20, 1 if h2.get('present') else 0)
+    elif kind == 'nav':
+        _nav(1 if msg.get('dir', 1) >= 0 else -1)
     elif kind == 'reset':
         op('feedback1').par.resetpulse.pulse()
     return

@@ -67,6 +67,11 @@ const SPREAD_MAX = 0.42; // fingers fanned out
 // If the roles feel swapped on your camera, change this to "Right".
 const EXPOSURE_HAND = "Left";
 
+// Gallery nav: with only ONE hand in frame, a fast horizontal rip flips to
+// the next/previous image in assets/. Must be faster than a break swipe.
+const NAV_V = 1.6;           // horizontal speed (frame-widths/sec)
+const NAV_COOLDOWN = 900;    // ms; one flip per rip, ignores the return path
+
 const statusEl = document.getElementById("status");
 const video = document.getElementById("cam");
 const canvas = document.getElementById("view");
@@ -139,6 +144,7 @@ async function run() {
   const breakHand = makeTrack(); // shatters/heals tiles
   const expoHand = makeTrack();  // dodge & burn
   let spread = 0;
+  let navAt = 0;
 
   const loop = () => {
     requestAnimationFrame(loop);
@@ -235,6 +241,16 @@ async function run() {
       parts.push(`expose ${dir}`);
     } else {
       expoHand.drop();
+    }
+
+    // --- gallery nav: one hand only, fast horizontal rip -------------------
+    if (hands.length === 1 && now > navAt) {
+      const t = bi >= 0 ? breakHand : expoHand;
+      if (t.seen && Math.abs(t.vx) > NAV_V) {
+        navAt = now + NAV_COOLDOWN;
+        send({ type: "nav", dir: t.vx < 0 ? 1 : -1 });
+        parts.push(t.vx < 0 ? "next image" : "previous image");
+      }
     }
 
     if (bi < 0 && ei < 0) parts.push("no hands");
