@@ -2,7 +2,7 @@
 #
 # Run from the TouchDesigner textport (Alt+T):
 #
-#   REPO = '/path/to/kiriko'; exec(open(REPO + '/td/build.py').read())
+#   REPO = '/path/to/kiriko'; exec(open(REPO + '/td/build.py', encoding='utf-8').read())
 #
 # Safe to re-run: it destroys and rebuilds the /kiriko container each time.
 # Shader and callback DATs sync to the files in this repo, so you can edit
@@ -35,7 +35,7 @@ if imgs:
     src.par.file = imgs[0]
     print('kiriko: using image', imgs[0])
 else:
-    print('kiriko: no image in assets/, using the TD default — drop one in and rerun')
+    print('kiriko: no image in assets/, using the TD default - drop one in and rerun')
 src.cook(force=True)
 w, h = max(src.width, 1), max(src.height, 1)
 if w <= h:
@@ -140,4 +140,4 @@ out.viewer = True
 
 project.save(os.path.join(REPO, 'td', 'kiriko.toe'))
 print('kiriko: built %dx%d tile grid, listening on ws://127.0.0.1:9980' % (COLS, ROWS))
-print('kiriko: saved td/kiriko.toe — open that directly next time')
+print('kiriko: saved td/kiriko.toe - open that directly next time')

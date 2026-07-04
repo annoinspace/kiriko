@@ -38,8 +38,11 @@ Python 3 for the static file server.
 Open TouchDesigner, open the textport (`Alt+T` / `Option+T`), and run:
 
 ```python
-REPO = '/Users/you/kiriko'; exec(open(REPO + '/td/build.py').read())
+REPO = '/Users/you/kiriko'; exec(open(REPO + '/td/build.py', encoding='utf-8').read())
 ```
+
+(The explicit encoding matters — TD's embedded Python defaults `open()` to
+ASCII and will choke on anything fancier in the file.)
 
 This builds the whole network, points it at the first image it finds in
 `assets/` (drop one in there first — jpg/png/tif), and saves `td/kiriko.toe`.
